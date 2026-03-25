@@ -124,6 +124,8 @@ add_holohub_application(prohawk_video_replayer DEPENDS OPERATORS prohawk_video_p
 
 add_holohub_application(qt_video_replayer DEPENDS OPERATORS qt_video npp_filter)
 
+add_holohub_application(qwen2_5_vl_3b_local)
+
 add_holohub_application(realsense_visualizer DEPENDS OPERATORS realsense_camera)
 
 add_holohub_application(st2110_demo DEPENDS

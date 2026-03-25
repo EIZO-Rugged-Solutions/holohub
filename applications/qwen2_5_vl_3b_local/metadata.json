@@ -1,0 +1,43 @@
+{
+	"application": {
+		"name": "Qwen2.5-VL Local Video Understanding",
+		"description": "Run Qwen2.5-VL-3B-Instruct locally with Transformers on a local sample or user-supplied video, without any runtime network dependency.",
+		"authors": [
+			{
+				"name": "Holoscan Team",
+				"affiliation": "NVIDIA"
+			}
+		],
+		"language": "Python",
+		"version": "1.0.0",
+		"changelog": {
+			"1.0": "Initial Release"
+		},
+		"holoscan_sdk": {
+			"minimum_required_version": "1.0.3",
+			"tested_versions": [
+				"1.0.3",
+				"2.1.0",
+				"3.5.0"
+			]
+		},
+		"platforms": [
+			"x86_64",
+			"aarch64"
+		],
+		"tags": ["Video", "Multimodal Model", "Transformers", "Offline Inference", "Reasoning", "Qwen"],
+		"ranking": 1,
+		"requirements": {
+			"transformers": {
+				"version": "4.57.1"
+			},
+			"accelerate": {
+				"version": "1.10.1"
+			}
+		},
+		"run": {
+			"command": "python3 <holohub_app_source>/app.py",
+			"workdir": "holohub_app_source"
+		}
+	}
+}

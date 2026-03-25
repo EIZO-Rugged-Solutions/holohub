@@ -1,0 +1,47 @@
+%YAML 1.2
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+app:
+  model_path: /workspace/holohub/data/models/Qwen/Qwen2.5-VL-3B-Instruct
+  prompt: Describe the scene, the actions taking place, and any safety-relevant observations in this video.
+  system_prompt: You are a helpful video understanding assistant.
+  sample_video_path: /workspace/holohub/data/qwen2_5_vl_3b_local/av_construction_stop_timestamped.mp4
+  query_interval_sec: 10.0
+  max_tokens: 24
+  temperature: 0.0
+  tensor_dtype: float16
+  quantization: none
+  attn_implementation: sdpa
+  output_file: qwen2_5_vl_3b_response.txt
+
+replayer_source:
+  basename: av_construction_stop_timestamped
+  frame_rate: 0
+  repeat: true
+  realtime: true
+  count: 0
+
+holoviz:
+  width: 1280
+  height: 752
+  window_title: Qwen2.5-VL-3B Live
+  headless: false
+  tensors:
+    - name: ""
+      type: color
+      opacity: 1.0
+      priority: 0
