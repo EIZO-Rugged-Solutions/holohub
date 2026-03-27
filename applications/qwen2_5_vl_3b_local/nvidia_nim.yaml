@@ -26,7 +26,6 @@ app:
   tensor_dtype: float16
   quantization: none
   attn_implementation: sdpa
-  output_file: qwen2_5_vl_3b_response.txt
 
 replayer_source:
   basename: av_construction_stop_timestamped

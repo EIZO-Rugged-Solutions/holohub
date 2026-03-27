@@ -103,7 +103,6 @@ class LiveQwen3VLOp(Operator):
         model_path: str,
         prompt: str,
         system_prompt: str,
-        output_file: str,
         query_interval_sec: float,
         max_tokens: int,
         temperature: float,
@@ -116,7 +115,6 @@ class LiveQwen3VLOp(Operator):
         self.model_path = pathlib.Path(model_path).expanduser().absolute()
         self.prompt = prompt
         self.system_prompt = system_prompt
-        self.output_file = output_file
         self.query_interval_sec = float(query_interval_sec)
         self.max_tokens = max_tokens
         self.temperature = temperature
@@ -222,16 +220,10 @@ class LiveQwen3VLOp(Operator):
             self.overlay_state.set_response(response_text)
 
             timestamp = datetime.now().isoformat(timespec="seconds")
-            output_path = pathlib.Path(self.output_file).expanduser()
-            if not output_path.is_absolute():
-                output_path = pathlib.Path.cwd() / output_path
-            output_path.write_text(response_text + "\n", encoding="utf-8")
-
             print(f"\n[{timestamp}] Prompt:\n")
             print(self.prompt)
             print(f"\n[{timestamp}] Response:\n")
             print(response_text)
-            print(f"\nSaved response to: {output_path}")
         except Exception:
             self.overlay_state.set_error("Generation failed. Check container logs.")
             logger.exception("Inference thread failed")
@@ -357,7 +349,6 @@ class QwenVLVideoApp(Application):
             model_path=self.args.model_path or app_config["model_path"],
             prompt=self.args.prompt or app_config["prompt"],
             system_prompt=app_config["system_prompt"],
-            output_file=self.args.output_file or app_config["output_file"],
             query_interval_sec=float(app_config["query_interval_sec"]),
             max_tokens=int(app_config["max_tokens"]),
             temperature=float(app_config["temperature"]),
@@ -398,7 +389,6 @@ def main():
         "--model-path", default=None, help="Override the configured local model directory."
     )
     parser.add_argument("--prompt", default=None, help="Override the configured prompt.")
-    parser.add_argument("--output-file", default=None, help="Override the output response path.")
     args = parser.parse_args()
 
     app = QwenVLVideoApp(args)
