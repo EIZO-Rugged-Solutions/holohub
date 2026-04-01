@@ -20,8 +20,16 @@ find_package(holoscan 1.0 REQUIRED CONFIG
              PATHS "/opt/nvidia/holoscan" "/workspace/holoscan-sdk/install")
 
 set(QWEN3_VL_SAMPLE_DIR "${HOLOHUB_DATA_DIR}/qwen2_5_vl_3b_local")
-set(QWEN3_VL_SAMPLE_MP4 "${QWEN3_VL_SAMPLE_DIR}/av_construction_stop_timestamped.mp4")
-set(QWEN3_VL_SAMPLE_BASENAME "av_construction_stop_timestamped")
+set(QWEN3_VL_SAMPLE_MP4 "${QWEN3_VL_SAMPLE_DIR}/traffic.mp4")
+set(QWEN3_VL_SAMPLE_BASENAME "traffic")
+set(QWEN3_VL_CACHED_MP4 "/opt/holohub_data/qwen2_5_vl_3b_local/traffic.mp4")
+
+# Copy the Pexels sample video from the Docker image cache into the data dir
+add_custom_command(OUTPUT "${QWEN3_VL_SAMPLE_MP4}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${QWEN3_VL_SAMPLE_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E copy "${QWEN3_VL_CACHED_MP4}" "${QWEN3_VL_SAMPLE_MP4}"
+  VERBATIM
+)
 
 add_custom_command(
   OUTPUT "${QWEN3_VL_SAMPLE_DIR}/${QWEN3_VL_SAMPLE_BASENAME}.gxf_index"
@@ -32,7 +40,7 @@ add_custom_command(
           --directory "${QWEN3_VL_SAMPLE_DIR}"
           --basename "${QWEN3_VL_SAMPLE_BASENAME}"
           --width 1280
-          --height 752
+          --height 720
           --framerate 30
   DEPENDS "${QWEN3_VL_SAMPLE_MP4}"
   VERBATIM

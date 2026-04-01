@@ -19,7 +19,7 @@ app:
   model_path: /workspace/holohub/data/models/Qwen/Qwen2.5-VL-3B-Instruct
   prompt: Describe the scene, the actions taking place, and any safety-relevant observations in this video.
   system_prompt: You are a helpful video understanding assistant.
-  sample_video_path: /workspace/holohub/data/qwen2_5_vl_3b_local/av_construction_stop_timestamped.mp4
+  sample_video_path: /workspace/holohub/data/qwen2_5_vl_3b_local/traffic.mp4
   query_interval_sec: 10.0
   max_tokens: 24
   temperature: 0.0
@@ -28,7 +28,7 @@ app:
   attn_implementation: sdpa
 
 replayer_source:
-  basename: av_construction_stop_timestamped
+  basename: traffic
   frame_rate: 0
   repeat: true
   realtime: true
@@ -36,7 +36,7 @@ replayer_source:
 
 holoviz:
   width: 1280
-  height: 752
+  height: 720
   window_title: Qwen2.5-VL-3B Live
   headless: false
   tensors:

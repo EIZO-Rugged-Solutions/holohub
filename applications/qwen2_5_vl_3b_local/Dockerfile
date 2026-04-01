@@ -59,4 +59,13 @@ COPY applications/qwen2_5_vl_3b_local/requirements.txt /tmp/requirements.txt
 RUN sed -i '/holoscan/d' /tmp/requirements.txt
 RUN python3 -m pip install -r /tmp/requirements.txt --no-cache-dir
 
+# Download sample video from Pexels and trim to 6.4 seconds
+# Stored outside /workspace/holohub so it survives the volume mount at runtime
+RUN mkdir -p /opt/holohub_data/qwen2_5_vl_3b_local \
+    && curl -S -L -o /tmp/video.mp4 \
+       "https://www.pexels.com/download/video/19326803/?fps=29.97&h=720&w=1280" \
+    && ffmpeg -y -i /tmp/video.mp4 -t 6.4 -c:v libx264 \
+       /opt/holohub_data/qwen2_5_vl_3b_local/traffic.mp4 \
+    && rm -f /tmp/video.mp4
+
 WORKDIR /workspace/holohub
