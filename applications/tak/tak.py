@@ -35,7 +35,6 @@ from holoscan.operators import (
     VideoStreamReplayerOp,
 )
 from holoscan.resources import UnboundedAllocator
-
 from operators.detector_op import DetectorOp
 from operators.tak_cot_op import TakCotOp
 
@@ -95,9 +94,14 @@ class TAKApp(Application):
         # Resolve model path from config against the data directory
         detector_kwargs = self.kwargs("detector")
         model_path = detector_kwargs.get("model_path", "yolov8s.pt")
-        bytetrack_config = detector_kwargs.pop(
-            "bytetrack_path", "bytetrack.yaml")
-        bytetrack_path = str(Path(__file__).with_name(bytetrack_config))
+        bytetrack_config = detector_kwargs.pop("bytetrack_path", "bytetrack.yaml")
+        bt_cfg_path = Path(bytetrack_config)
+        if bt_cfg_path.is_absolute():
+            bytetrack_path = str(bt_cfg_path)
+        else:
+            bytetrack_path = str(Path(__file__).resolve().parent / bytetrack_config)
+        if not os.path.isfile(bytetrack_path):
+            raise FileNotFoundError(f"ByteTrack config not found at {bytetrack_path}")
         data_model = os.path.join(self.data, model_path)
         if os.path.exists(data_model):
             detector_kwargs["model_path"] = data_model
@@ -152,26 +156,29 @@ class TAKApp(Application):
 
 
 def main():
-    parser = ArgumentParser(
-        description="TAK: YOLOv8 Detection with TAK Integration.")
+    parser = ArgumentParser(description="TAK: YOLOv8 Detection with TAK Integration.")
     parser.add_argument(
-        "-c", "--config",
+        "-c",
+        "--config",
         default=os.path.join(os.path.dirname(__file__), "tak.yaml"),
         help="Path to the configuration file.",
     )
     parser.add_argument(
-        "-s", "--source",
+        "-s",
+        "--source",
         choices=["v4l2", "replayer"],
         default="v4l2",
         help="Input source: 'v4l2' for V4L2 device or 'replayer' for video stream replayer.",
     )
     parser.add_argument(
-        "-d", "--data",
+        "-d",
+        "--data",
         default="none",
         help="Path to the data directory (model + video).",
     )
     parser.add_argument(
-        "-v", "--video_dir",
+        "-v",
+        "--video_dir",
         default="none",
         help="Path to the video directory (for replayer mode).",
     )
@@ -181,9 +188,12 @@ def main():
     # Logging setup
     log_level_str = os.getenv("HOLOSCAN_LOG_LEVEL", "INFO").upper()
     python_log_map = {
-        "TRACE": logging.DEBUG, "DEBUG": logging.DEBUG,
-        "INFO": logging.INFO, "WARN": logging.WARNING,
-        "WARNING": logging.WARNING, "ERROR": logging.ERROR,
+        "TRACE": logging.DEBUG,
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARN": logging.WARNING,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
         "CRITICAL": logging.CRITICAL,
     }
     logging.basicConfig(
@@ -191,27 +201,49 @@ def main():
         format="[%(levelname)s] [%(name)s] %(message)s",
     )
     holoscan_log_map = {
-        "TRACE": LogLevel.TRACE, "DEBUG": LogLevel.DEBUG,
-        "INFO": LogLevel.INFO, "WARN": LogLevel.WARN,
-        "WARNING": LogLevel.WARN, "ERROR": LogLevel.ERROR,
+        "TRACE": LogLevel.TRACE,
+        "DEBUG": LogLevel.DEBUG,
+        "INFO": LogLevel.INFO,
+        "WARN": LogLevel.WARN,
+        "WARNING": LogLevel.WARN,
+        "ERROR": LogLevel.ERROR,
         "CRITICAL": LogLevel.CRITICAL,
     }
     set_log_level(holoscan_log_map.get(log_level_str, LogLevel.INFO))
     set_log_pattern("[%^%l%$] [%n] %v")
 
-    # TAK server config from environment
+    # TAK server config: merge environment override with tak.yaml values
     tak_host_override = None
     tak_host_raw = os.getenv("TAK_HOST")
     if tak_host_raw is not None:
         if tak_host_raw.startswith("http://") or tak_host_raw.startswith("https://"):
             from urllib.parse import urlparse
+
             tak_host_override = urlparse(tak_host_raw).hostname or ""
         else:
             tak_host_override = tak_host_raw
 
-    # Start OpenTAKServer services and wait until ready before launching the app
+    # Determine the effective TAK host and port from env override or tak.yaml
+    effective_host = tak_host_override
+    effective_port = None
+    try:
+        import yaml
+
+        with open(args.config, "r") as _cf:
+            _cfg = yaml.safe_load(_cf) or {}
+        tak_cot_cfg = _cfg.get("tak_cot") or {}
+        if effective_host is None:
+            effective_host = tak_cot_cfg.get("tak_host", "localhost")
+        effective_port = tak_cot_cfg.get("tak_port")
+    except Exception:
+        if effective_host is None:
+            effective_host = "localhost"
+
+    # Start OpenTAKServer services only when the target is local and not empty
+    # (empty host means TAK is disabled — TakCotOp skips connection)
+    _local_hosts = {"localhost", "127.0.0.1", "::1"}
     ots_script = "/opt/ots/start_ots.sh"
-    if os.path.isfile(ots_script):
+    if os.path.isfile(ots_script) and effective_host in _local_hosts:
         import socket
         import subprocess
         import time
@@ -223,9 +255,13 @@ def main():
                 "First run: OpenTAKServer will be downloaded and installed. "
                 "This may take 1-2 minutes. Subsequent launches will be faster."
             )
+        # Export configured port so start_ots.sh and nginx use it
+        if effective_port is not None:
+            os.environ.setdefault("OTS_COT_PORT", str(effective_port))
+
         tak_logger.info("Starting OpenTAKServer services...")
         ots_log = open("/tmp/ots_start.log", "w")
-        ots_proc = subprocess.Popen(
+        subprocess.Popen(
             ["bash", "-u", ots_script],
             stdout=ots_log,
             stderr=subprocess.STDOUT,
@@ -249,9 +285,7 @@ def main():
 
         # Wait for the TCP CoT port to be accepting connections
         cot_port = int(os.getenv("OTS_COT_PORT", "18088"))
-        tak_logger.info(
-            "Waiting for OTS to be ready (TCP port %d)...", cot_port
-        )
+        tak_logger.info("Waiting for OTS to be ready (TCP port %d)...", cot_port)
         start_wait = time.time()
         for attempt in range(60):
             try:
@@ -260,17 +294,13 @@ def main():
                 s.connect(("localhost", cot_port))
                 s.close()
                 elapsed = time.time() - start_wait
-                tak_logger.info(
-                    "OTS is ready (took %.0fs)", elapsed
-                )
+                tak_logger.info("OTS is ready (took %.0fs)", elapsed)
                 break
             except OSError:
                 s.close()
                 elapsed = time.time() - start_wait
                 if attempt > 0 and attempt % 5 == 0:
-                    tak_logger.info(
-                        "Still waiting for OTS... (%.0fs elapsed)", elapsed
-                    )
+                    tak_logger.info("Still waiting for OTS... (%.0fs elapsed)", elapsed)
                 time.sleep(2)
         else:
             tak_logger.warning(

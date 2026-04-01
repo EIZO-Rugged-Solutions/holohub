@@ -13,7 +13,7 @@ The pipeline supports two input modes:
 
 ### Pipeline
 
-```
+```text
 Video Source ──> Format Converter ──> YOLOv8 + ByteTrack ──┬──> Holoviz (local display)
                                                            └──> TAK CoT Operator ──> TAK Server
 ```
@@ -131,12 +131,14 @@ applications/tak/prepare_video_gxf.sh <input_video.mp4> <output_directory>
 
 This handles pixel aspect ratio correction, optional letterboxing, and conversion to GXF entities. Set `TARGET_WIDTH` and `TARGET_HEIGHT` environment variables to enable letterboxing to a specific resolution.
 
+> **Note:** The helper script outputs files named `video_stream.gxf_*`, while `tak.yaml` defaults to `replayer.basename: "traffic"`. After conversion, either rename the output files to `traffic.gxf_index` / `traffic.gxf_entities`, or update `replayer.basename` in `tak.yaml` to `"video_stream"`. Alternatively, use the `--video_dir` flag to point to the output directory and update the basename accordingly.
+
 ## Configuration Reference
 
 ### `tak.yaml`
 
 | Section | Parameter | Description |
-|---|---|---|
+| --- | --- | --- |
 | `replayer` | `basename` | Base filename of the GXF video files |
 | `replayer` | `repeat` | Loop the video (`true`/`false`) |
 | `v4l2_source` | `device` | V4L2 device path (e.g., `/dev/video0`) |
@@ -151,7 +153,7 @@ This handles pixel aspect ratio correction, optional letterboxing, and conversio
 ### `bytetrack.yaml`
 
 | Parameter | Description |
-|---|---|
+| --- | --- |
 | `track_high_thresh` | High detection threshold for track initialization |
 | `track_low_thresh` | Low detection threshold for second association |
 | `new_track_thresh` | Threshold for creating new tracks |
@@ -161,7 +163,7 @@ This handles pixel aspect ratio correction, optional letterboxing, and conversio
 ### Environment Variables
 
 | Variable | Description |
-|---|---|
+| --- | --- |
 | `TAK_HOST` | Override TAK server host (empty string disables TAK) |
 | `HOLOSCAN_LOG_LEVEL` | Log verbosity: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` |
 | `HOLOHUB_DATA_PATH` | Override default data directory |

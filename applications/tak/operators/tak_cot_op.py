@@ -25,7 +25,6 @@ import xml.etree.ElementTree as ET
 from typing import Optional
 
 import cupy as cp
-import numpy as np
 import pytak
 from holoscan.core import Operator, OperatorSpec
 
@@ -68,6 +67,7 @@ class TakCotOp(Operator):
         self.detection_count = 0
         self.last_send_time = 0.0
         self._presence_sent = False
+        self._detection_offsets: dict[str, tuple[float, float]] = {}
 
         super().__init__(fragment, *args, **kwargs)
 
@@ -81,9 +81,7 @@ class TakCotOp(Operator):
                 "Set TAK_HOST environment variable to enable."
             )
             return
-        logger.info(
-            "Connecting to TAK server at %s:%d", self.tak_host, self.tak_port
-        )
+        logger.info("Connecting to TAK server at %s:%d", self.tak_host, self.tak_port)
         self._connect()
         if not self.connected:
             logger.warning(
@@ -95,9 +93,9 @@ class TakCotOp(Operator):
 
     def _connect(self):
         try:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(5.0)
-            self.socket.connect((self.tak_host, self.tak_port))
+            self.socket = socket.create_connection(
+                (self.tak_host, self.tak_port), timeout=5.0
+            )
             self.connected = True
             logger.info("Connected to TAK server successfully")
         except Exception as e:
@@ -196,9 +194,7 @@ class TakCotOp(Operator):
                 detection_id, label, lat, lon, cot_type=cot_type
             )
             self.socket.sendall(cot_message + b"\n")
-            logger.info(
-                "Sent CoT marker: %s at (%.6f, %.6f)", label, lat, lon
-            )
+            logger.info("Sent CoT marker: %s at (%.6f, %.6f)", label, lat, lon)
             return True
         except Exception as e:
             logger.error("CoT send error: %s", e)
@@ -229,8 +225,6 @@ class TakCotOp(Operator):
             if bbox_tensor is None:
                 return
 
-            bboxes = cp.asarray(bbox_tensor).get()
-
             bbox_label_tensor = entity.get("bbox_label")
             if bbox_label_tensor is None:
                 return
@@ -255,11 +249,6 @@ class TakCotOp(Operator):
             logger.debug("Processing %d detections", num_detections)
 
             for i in range(num_detections):
-                # ~150 feet ≈ 46 meters ≈ 0.000405 degrees
-                # Place detections south-east (bottom-right) of the base
-                lat_offset = random.uniform(-0.000405, 0)
-                lon_offset = random.uniform(0, 0.000405)
-
                 self.detection_count += 1
 
                 cls_name = ""
@@ -269,12 +258,34 @@ class TakCotOp(Operator):
 
                 if track_ids is not None and i < len(track_ids):
                     track_id = int(track_ids[i])
-                    detection_id = f"{cls_name}-{track_id}" if cls_name else f"Detection-{track_id}"
-                    detection_label = f"{cls_name} {track_id}" if cls_name else f"Detection {track_id}"
+                    detection_id = (
+                        f"{cls_name}-{track_id}"
+                        if cls_name
+                        else f"Detection-{track_id}"
+                    )
+                    detection_label = (
+                        f"{cls_name} {track_id}"
+                        if cls_name
+                        else f"Detection {track_id}"
+                    )
                 else:
                     slot_id = (self.detection_count % 100) + 1
-                    detection_id = f"{cls_name}-{slot_id}" if cls_name else f"Detection-{slot_id}"
-                    detection_label = f"{cls_name} {slot_id}" if cls_name else f"Detection {slot_id}"
+                    detection_id = (
+                        f"{cls_name}-{slot_id}" if cls_name else f"Detection-{slot_id}"
+                    )
+                    detection_label = (
+                        f"{cls_name} {slot_id}" if cls_name else f"Detection {slot_id}"
+                    )
+
+                # Cache offsets per detection_id so markers don't jump
+                if detection_id not in self._detection_offsets:
+                    # ~150 feet ≈ 46 meters ≈ 0.000405 degrees
+                    # Place detections south-east (bottom-right) of the base
+                    self._detection_offsets[detection_id] = (
+                        random.uniform(-0.000405, 0),
+                        random.uniform(0, 0.000405),
+                    )
+                lat_offset, lon_offset = self._detection_offsets[detection_id]
 
                 lat = self.base_lat + lat_offset
                 lon = self.base_lon + lon_offset

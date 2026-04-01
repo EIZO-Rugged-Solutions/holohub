@@ -9,11 +9,16 @@ set -e
 
 OTS_VENV=/opt/ots/venv
 export OTS_DATA_FOLDER=/opt/ots/data
+OTS_PATCH_DIR=/opt/ots/patches
+OTS_PYTHONPATH="${OTS_PATCH_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
-PG_PORT=5432
+PG_CONFIG=/etc/postgresql/16/main/postgresql.conf
+PG_PORT=$(awk '$1 == "port" {print $3; exit}' "$PG_CONFIG" 2>/dev/null)
+PG_PORT=${PG_PORT:-5432}
 OTS_API_PORT=${OTS_API_PORT:-18081}
 OTS_COT_PORT=${OTS_COT_PORT:-18088}
 OTS_WEB_PORT=${OTS_WEB_PORT:-18080}
+export OTS_SOCKETIO_CORS_ALLOWED_ORIGINS=${OTS_SOCKETIO_CORS_ALLOWED_ORIGINS:-http://localhost:${OTS_WEB_PORT},http://127.0.0.1:${OTS_WEB_PORT}}
 
 FIRST_RUN=false
 if [ ! -f /opt/ots/.setup_complete ]; then
@@ -32,6 +37,7 @@ if [ "$FIRST_RUN" = true ]; then
 fi
 echo "============================================================"
 echo ""
+echo "[OTS] PostgreSQL configured port: ${PG_PORT}"
 
 # --- Launch PostgreSQL, RabbitMQ, and first-run setup in parallel ----------
 
@@ -42,7 +48,7 @@ echo ""
     pg_ctlcluster 16 main start 2>/dev/null || true
     pg_ready=false
     for i in $(seq 1 15); do
-        if pg_isready -p "$PG_PORT" -q 2>/dev/null; then
+        if pg_isready -h 127.0.0.1 -p "$PG_PORT" -U ots -d ots -q 2>/dev/null; then
             pg_ready=true
             break
         fi
@@ -61,13 +67,16 @@ PG_PID=$!
 (
     echo "[OTS] Starting RabbitMQ..."
     export RABBITMQ_NODENAME=rabbit@localhost
-    export RABBITMQ_CONF_ENV_FILE=/dev/null
+    export RABBITMQ_HOME=/tmp/rabbitmq/home
+    export HOME="$RABBITMQ_HOME"
+    export RABBITMQ_CONF_ENV_FILE=/tmp/rabbitmq/rabbitmq-env.conf
     export RABBITMQ_MNESIA_BASE=/tmp/rabbitmq/mnesia
     export RABBITMQ_LOG_BASE=/tmp/rabbitmq/log
     export RABBITMQ_PID_FILE=/tmp/rabbitmq/rabbit.pid
     export ERL_EPMD_ADDRESS=127.0.0.1
-    export HOME=${HOME:-/tmp}
-    mkdir -p "$RABBITMQ_MNESIA_BASE" "$RABBITMQ_LOG_BASE"
+    mkdir -p "$RABBITMQ_HOME" "$RABBITMQ_MNESIA_BASE" "$RABBITMQ_LOG_BASE"
+    chmod 700 "$RABBITMQ_HOME"
+    : > "$RABBITMQ_CONF_ENV_FILE"
 
     epmd -daemon 2>/dev/null || true
     rabbitmq-server -detached 2>/dev/null || true
@@ -110,7 +119,8 @@ echo "[OTS] All services initialized"
 
 # Re-export RabbitMQ env (subshell exports don't propagate)
 export RABBITMQ_NODENAME=rabbit@localhost
-export HOME=${HOME:-/tmp}
+export RABBITMQ_HOME=/tmp/rabbitmq/home
+export HOME="$RABBITMQ_HOME"
 
 # --- Patch OTS config -------------------------------------------------
 OTS_DB_URI="postgresql+psycopg2://ots:ots@127.0.0.1:${PG_PORT}/ots"
@@ -121,7 +131,7 @@ if [ -f "$OTS_DATA_FOLDER/config.yml" ]; then
     sed -i "s|OTS_TCP_STREAMING_PORT:.*|OTS_TCP_STREAMING_PORT: ${OTS_COT_PORT}|" "$OTS_DATA_FOLDER/config.yml"
 else
     echo "[OTS] Generating initial config..."
-    timeout 5 "$OTS_VENV/bin/opentakserver" >/dev/null 2>&1 || true
+    PYTHONPATH="$OTS_PYTHONPATH" timeout 5 "$OTS_VENV/bin/opentakserver" >/dev/null 2>&1 || true
     sleep 1
     if [ -f "$OTS_DATA_FOLDER/config.yml" ]; then
         sed -i "s|SQLALCHEMY_DATABASE_URI:.*|SQLALCHEMY_DATABASE_URI: ${OTS_DB_URI}|" "$OTS_DATA_FOLDER/config.yml"
@@ -132,7 +142,7 @@ fi
 
 # --- Start OTS processes ----------------------------------------------
 echo "[OTS] Starting opentakserver API (port ${OTS_API_PORT})..."
-"$OTS_VENV/bin/opentakserver" > /tmp/ots_api.log 2>&1 &
+PYTHONPATH="$OTS_PYTHONPATH" "$OTS_VENV/bin/opentakserver" > /tmp/ots_api.log 2>&1 &
 
 # Wait for API port instead of hardcoded sleep
 echo "[OTS] Waiting for API to accept connections..."
@@ -150,18 +160,24 @@ if [ "$api_ready" != true ]; then
 fi
 
 echo "[OTS] Starting cot_parser..."
-"$OTS_VENV/bin/cot_parser" > /tmp/ots_cot_parser.log 2>&1 &
+PYTHONPATH="$OTS_PYTHONPATH" "$OTS_VENV/bin/cot_parser" > /tmp/ots_cot_parser.log 2>&1 &
 
 echo "[OTS] Starting eud_handler (TCP CoT on port ${OTS_COT_PORT})..."
-"$OTS_VENV/bin/eud_handler" > /tmp/ots_eud_handler.log 2>&1 &
+PYTHONPATH="$OTS_PYTHONPATH" "$OTS_VENV/bin/eud_handler" > /tmp/ots_eud_handler.log 2>&1 &
 
 # --- Nginx (Web UI) ---
 echo "[OTS] Starting nginx (Web UI on port ${OTS_WEB_PORT})..."
+sed -i "s/\${OTS_WEB_PORT}/${OTS_WEB_PORT}/g; s/\${OTS_API_PORT}/${OTS_API_PORT}/g" \
+    /etc/nginx/sites-available/ots
 nginx 2>/dev/null || true
 
 echo ""
 echo "============================================================"
-echo "[OTS] OpenTAKServer ready"
+if [ "$api_ready" = true ]; then
+    echo "[OTS] OpenTAKServer ready"
+else
+    echo "[OTS] OpenTAKServer started (API may not be fully ready)"
+fi
 echo "[OTS]   Web UI:   http://localhost:${OTS_WEB_PORT}"
 echo "[OTS]   TCP CoT:  port ${OTS_COT_PORT}"
 echo "[OTS]   HTTP API: port ${OTS_API_PORT}"
